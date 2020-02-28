@@ -1,2 +1,2 @@
 # stuff
-A repository with random things
+A repository with a very important stuff
