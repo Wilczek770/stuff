@@ -22,3 +22,28 @@ var tuple = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16);
 Console.WriteLine(tuple.Item16);
 ```
 This above code is totally legal. Although, it's converted by compiler into `tuple.Rest.Rest.Item2` 
+
+---
+### Decomposition
+
+- given method 
+```csharp
+static (int x, int y, string z) MethodReturningTuple()
+```
+this two are equivalent:
+```csharp
+(var a, var b, var c) = MethodReturningTuple();
+var (a, b, c) = MethodReturningTuple();
+```
+
+Decomposition of a tuple to inline class constructor:
+```csharp
+public class Point
+{
+    public int X { get; set; }
+    public int Y { get; set; }
+
+    public Point(int x, int y) =>
+        (X, Y) = (x, y);
+}
+```
