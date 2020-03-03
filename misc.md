@@ -19,7 +19,7 @@ var wideFifteen = 1_____________________5;
 
 Adding an attribute to a backing field of a property 
 
-Old way:
+* Old way:
 
 ```csharp
 [Demo]
@@ -31,7 +31,7 @@ public string Name
 }
 ```
 
-New, fantastic way:
+* New, fantastic way:
 ```csharp
 [field: Demo]
 public string Name{ get; set; }
