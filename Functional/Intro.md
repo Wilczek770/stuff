@@ -1,3 +1,5 @@
+Based on [this](https://fsharpforfunandprofit.com/posts/elevated-world/) article
+
 # Map function
 * **Common names:** Map, Select
 * **What it does:** It lifts a function into an elevated world
@@ -76,6 +78,9 @@ let resultOption =
 // resultOption = Some 5
 ```
 # Apply vs. Map
+
+The combination of apply and return is considered “more powerful” than map, because if you have apply and return, you can construct map from them, but not vice versa.
+
 Code can be simplified a bit using infix operators:
 ```fsharp
 let resultOption2 =  
@@ -182,8 +187,188 @@ let combineOpt x y = Option.lift2 tuple x y
 // with the tuple constructor baked in
 let combineList x y = List.lift2 tuple x y 
 ```
+```fsharp
+combineOpt (Some 1) (Some 2)        
+// Result => Some (1, 2)
+
+combineList [1;2] [100;200]         
+// Result => [(1, 100); (1, 200); (2, 100); (2, 200)]
+```
+
+Example usage of a generic version:
+```fsharp
+combineOpt (Some 2) (Some 3)        
+|> Option.map (fun (x,y) -> x + y)  
+// Result => // Some 5
+
+combineList [1;2] [100;200]         
+|> List.map (fun (x,y) -> x + y)    
+// Result => [101; 201; 102; 202]
+````
+Add:
+```fsharp
+combineOpt (Some 2) (Some 3)        
+|> Option.map (fun (x,y) -> x + y)  
+// Result => // Some 5
+
+combineList [1;2] [100;200]         
+|> List.map (fun (x,y) -> x + y)    
+// Result => [101; 201; 102; 202]
+```
+Multiply:
+```fsharp
+combineOpt (Some 2) (Some 3)        
+|> Option.map (fun (x,y) -> x * y)  
+// Result => Some 6
+
+combineList [1;2] [100;200]         
+|> List.map (fun (x,y) -> x * y)    
+// Result => [100; 200; 200; 400]
+```
+
+Defining `apply` in `lift2` context: 
+```fsharp
+module Option = 
+    /// define lift2 from scratch
+    let lift2 f xOpt yOpt = 
+        match xOpt,yOpt with
+        | Some x,Some y -> Some (f x y)
+        | _ -> None
+
+    /// define apply in terms of lift2
+    let apply fOpt xOpt = 
+        lift2 (fun f x -> f x) fOpt xOpt 
+```
+
+# Combining missing or bad data
+
+When there's a missing data, there will be a fallback to a 'no value' value:
+```fsharp
+combineOpt (Some 2) None    
+|> Option.map (fun (x,y) -> x + y)    
+// Result => None
+
+combineList [1;2] []         
+|> List.map (fun (x,y) -> x * y)    
+// Result => Empty list
+```
+
+## One sided combiners `<*` and `*>`
+```fsharp
+// it gets `left` or `right` value for every element in passed arguments
+let ( <* ) x y = 
+    List.lift2 (fun left right -> left) x y 
+
+let ( *> ) x y = 
+    List.lift2 (fun left right -> right) x y 
+```
+```fsharp
+[1;2] <* [3;4;5]   // [1; 1; 1; 2; 2; 2]
+[1;2] *> [3;4;5]   // [3; 4; 5; 3; 4; 5]
+```
+
+To change it into a new `repeat` & `replicate` feature:
+```fsharp
+let repeat n pattern =
+    [1..n] *> pattern 
+
+let replicate n x =
+    [1..n] *> [x]
+
+repeat 3 ["a";"b"]  
+// ["a"; "b"; "a"; "b"; "a"; "b"]
+
+replicate 5 "A"
+// ["A"; "A"; "A"; "A"; "A"]
+```
+
+A more practical approach to `<*` and `*>` combiners:
+```fsharp
+let readQuotedString =
+   readQuoteChar *> readNonQuoteChars <* readQuoteChar
+```
+
+> In this snippet, `readQuoteChar` means “match and read a quote character from the input stream” and `readNonQuoteChars` means “read a series of non-quote characters from the input stream”.
+> When we are parsing a quoted string we want ensure the input stream that contains the quote character is read, but we don’t care about the quote characters themselves, just the inner content.
+Hence the use of `*>` to ignore the leading quote and `<*` to ignore the trailing quote.
+
+# Zip function
+* **Other names:** map2
+* **What it does:** Combines two lists (or other enumerables) into one, using a specified function
+* **Signature:** `E<(a->b->c)> -> E<a> -> E<b> -> E<c>` where `E` is a list or other enumerable type, or `E<a> -> E<b> -> E<a,b>` for the tuple-combined version.
+
+```fsharp
+// alternate "zip" implementation
+// [f;g] apply [x;y] becomes [f x; g y]
+let rec zipList fList xList  = 
+    match fList,xList with
+    | [],_ 
+    | _,[] -> 
+        // either side empty, then done
+        []  
+    | (f::fTail),(x::xTail) -> 
+        // new head + new tail
+        (f x) :: (zipList fTail xTail)
+// has type : ('a -> 'b) -> 'a list -> 'b list
+```
+
+Usage of our just - implemented `zipList`:
+```fsharp
+let add10 x = x + 10
+let add20 x = x + 20
+let add30 x = x + 30
+
+let result =  
+    let (<*>) = zipList 
+    [add10; add20; add30] <*> [1; 2; 3] 
+// result => [11; 22; 33]
+```
+
+zipList can be interpeted as a combiner:
+```fsharp
+let add x y = x + y
+
+let resultAdd =  
+    let (<*>) = zipList 
+    [add;add] <*> [1;2] <*> [10;20]
+// resultAdd = [11; 22]
+// [ (add 1 10); (add 2 20) ]
+```
+
+ZipList with infinitely generated values:
+```fsharp
+module ZipSeq =
+    
+    // define "return" for ZipSeqWorld
+    let retn x = Seq.initInfinite (fun _ -> x)
+
+    // define "apply" for ZipSeqWorld
+    // (where we can define apply in terms of "lift2", aka "map2")
+    let apply fSeq xSeq  = 
+        Seq.map2 (fun f x -> f x)  fSeq xSeq  
+    // has type : ('a -> 'b) seq -> 'a seq -> 'b seq
+
+    // define a sequence that is a combination of two others
+    let triangularNumbers = 
+        let (<*>) = apply
+
+        let addAndDivideByTwo x y = (x + y) / 2
+        let numbers = Seq.initInfinite id
+        let squareNumbers = Seq.initInfinite (fun i -> i * i)
+        (retn addAndDivideByTwo) <*> numbers <*> squareNumbers 
+```
+
 
 ---
 ## Dictionary
 * Elevation -> process of transforming a 'regular' entity into a functional world, like converting `int` into `Option<int>`
 * Elevated function -> a function working on an elevated values, like `DoSomething(input: Option<int>)` 
+* `::` operator -> it's used to split list into `head` & `tail`
+* `@` operator -> list concatenation
+    ```fsharp
+    let tt = [2;3;4]
+    let ww = match tt with
+                | (head :: tail) // split list into head / tail 
+                    -> tail @ [head] // concat head to tail (at the end of tail)
+                | [] -> []
+    ```
